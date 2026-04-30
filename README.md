@@ -9,64 +9,126 @@
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20KVM-orange?logo=linux)](https://www.kernel.org/doc/html/latest/virt/kvm/index.html)
 [![Performance](https://img.shields.io/badge/Overhead-<2%25-blueviolet)](#)
 
-**Vellum** is an ultra-lean, C++20-based virtualization controller designed for managing Micro-VMs with millisecond latency. By bypassing heavy legacy stacks and utilizing a headless, browser-based management interface, Vellum provides near-native performance for sandbox workloads, edge computing, and CI/CD runners.
+A lightweight VM manager built with C++20, providing a browser-based GUI for creating, monitoring, and managing micro-VMs using Linux KVM.
 
----
+## Requirements
 
-## 🏛️ Architecture Overview
+- **Operating System**: Linux (KVM requires Linux kernel support)
+- **Hardware**: CPU with virtualization extensions (VT-x/AMD-V)
+- **Software**: 
+  - C++20 compiler (GCC 10+ or Clang 12+)
+  - CMake 3.16+
+  - Crow C++ web framework
+  - libvirt development headers
+  - Linux kernel headers
 
-Unlike traditional VM managers, Vellum operates on a **Decoupled Control Plane** model. The C++ backend interfaces directly with the Linux KVM subsystem via `libvirt` ioctls, while serving a lightweight, asynchronous API to a React-driven web interface.
+**Note**: This project requires Linux and cannot run on Windows natively. Use WSL2 or a Linux VM for development.
 
-- **The Core:** C++20 event loop utilizing non-blocking I/O.
-- **The GUI:** A stateless, Tailwind-based SPA (Single Page Application) embedded into the binary.
-- **Communication:** Bi-directional WebSockets for real-time serial console and telemetry.
+## Features
 
----
+- **Micro-VM Creation**: Boot virtio-ready Linux kernels with minimal resource usage
+- **Real-time Monitoring**: Zero-copy telemetry streaming via WebSockets
+- **Web-based Console**: Headless serial console accessible through xterm.js terminal
+- **Resource Throttling**: Cgroup-based CPU and memory limits
+- **Copy-on-Write Disk**: qcow2 overlay files for instant VM cloning
+- **REST API**: Full RESTful API for VM management
+- **WebSocket Support**: Real-time communication for console and telemetry
 
-## 🔥 Key Differentiators
+## Architecture
 
-### ⚡ Zero-Copy Telemetry
-Vellum reads VM metrics directly from the host's `/proc` and `/sys` filesystems, streaming them to the GUI via WebSockets. This eliminates the CPU spikes caused by traditional polling methods.
+### Core Components
 
-### 💾 Instant Cloning (CoW)
-By utilizing `qcow2` backing files, Vellum can spawn a new VM instance from a "Golden Image" in under 500ms using Copy-on-Write logic.
+- **VMInstance**: Represents individual VM instances with KVM integration
+- **HypervisorManager**: Singleton managing all VM instances
+- **APIServer**: REST API and WebSocket server using Crow framework
+- **Frontend**: React-based SPA with Tailwind CSS and xterm.js
 
-### 🖥️ Headless Serial Bridge
-The tool includes a custom serial-to-websocket bridge, allowing full `tty` access to the guest OS directly through the browser using **Xterm.js**, removing the need for SSH during initial boot.
+### Key Design Principles
 
----
+1. **Lightweight**: Direct KVM ioctl calls, no heavy emulation
+2. **Headless**: Daemon process with browser-based GUI
+3. **VirtIO Only**: Fast, efficient device virtualization
+4. **User-space Memory**: mmap-based guest memory allocation
 
-## 🛠️ Advanced API Reference
+## Building
 
-Vellum exposes a high-performance REST API for automation and third-party integration.
+### Prerequisites
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/api/v1/vm/list` | `GET` | Returns JSON array of all defined VM states. |
-| `/api/v1/vm/provision` | `POST` | Clones a template and initializes a new Micro-VM. |
-| `/api/v1/vm/:id/start` | `POST` | Bootstraps the KVM instance. |
-| `/api/v1/vm/:id/stats` | `WS` | WebSocket stream for real-time CPU/RAM metrics. |
+- Linux with KVM support
+- CMake 3.16+
+- C++20 compiler
+- Crow C++ web framework
+- libvirt development headers
+- Node.js and npm (for frontend)
 
----
+### Build Steps
 
-## 🔧 Installation & Build System
-
-Vellum uses a modern CMake workflow.
-
-### Dependencies
-- **Compiler:** GCC 11+ or Clang 13+
-- **Hypervisor:** KVM (Linux Kernel 5.10+)
-- **Libraries:** `libvirt-dev`, `libpthread`
-
-### Build Instructions
 ```bash
-# Clone with submodules (for Web Framework)
-git clone --recursive [https://github.com/yourusername/vellum.git](https://github.com/yourusername/vellum.git)
-cd vellum
+# Clone and setup
+mkdir build && cd build
+cmake ..
+make
 
-# Configure and Build
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release -j$(nproc)
+# Build frontend
+cd ../frontend
+npm install
+npm run build
+```
 
-# Launch the Daemon
-sudo ./build/vellum --interface 0.0.0.0 --port 8080
+### Docker Build
+
+```bash
+docker build -t vellum .
+docker run -p 8080:8080 --privileged vellum
+```
+
+Note: `--privileged` is required for KVM access.
+
+## API Documentation
+
+### REST Endpoints
+
+- `POST /api/vm/create` - Create a new VM
+- `DELETE /api/vm/{id}` - Destroy a VM
+- `POST /api/vm/{id}/start` - Start a VM
+- `POST /api/vm/{id}/stop` - Stop a VM
+- `GET /api/vm/{id}/metrics` - Get VM metrics
+- `GET /api/vm/list` - List all VMs
+
+### WebSocket Endpoints
+
+- `/ws/console/{id}` - VM console access
+- `/ws/telemetry` - Real-time telemetry stream
+
+## Usage
+
+1. Start the Vellum daemon
+2. Open http://localhost:8080 in your browser
+3. Create a new VM with kernel path and parameters
+4. Start the VM and access its console
+5. Monitor real-time metrics
+
+## Configuration
+
+VMs require:
+- Linux kernel image (bzImage format)
+- Optional initrd for early userspace
+- Memory allocation in MB
+- Number of virtual CPUs
+
+## Security Considerations
+
+- Run as non-root user with KVM permissions
+- Implement authentication for production use
+- Validate all input parameters
+- Use cgroups for resource isolation
+
+## Contributing
+
+This is a prototype implementation. Key areas for improvement:
+- Complete KVM ioctl implementations
+- Full VirtIO device support
+- Cgroup integration
+- qcow2 snapshot management
+- Authentication and authorization
+- Comprehensive error handling
