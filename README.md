@@ -1,5 +1,9 @@
 # 💎 Vellum: High-Performance Virtualization Engine
 
+
+![Vellum Dashboard](VELLUM.png)
+
+
 [![C++20](https://img.shields.io/badge/Language-C%2B%2B20-00599C?logo=cplusplus)](https://isocpp.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20KVM-orange?logo=linux)](https://www.kernel.org/doc/html/latest/virt/kvm/index.html)
