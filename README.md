@@ -1,7 +1,7 @@
 # 💎 Vellum: High-Performance Virtualization Engine
 
 
-![Vellum Dashboard](VELLUM.png)
+![Vellum Dashboard](assets/VELLUM.png)
 
 
 [![C++20](https://img.shields.io/badge/Language-C%2B%2B20-00599C?logo=cplusplus)](https://isocpp.org/)
