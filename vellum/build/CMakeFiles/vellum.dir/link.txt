@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/vellum.dir/src/main.cpp.o CMakeFiles/vellum.dir/src/VMInstance.cpp.o CMakeFiles/vellum.dir/src/HypervisorManager.cpp.o CMakeFiles/vellum.dir/src/KVMRunLoop.cpp.o CMakeFiles/vellum.dir/src/WebSocketBridge.cpp.o CMakeFiles/vellum.dir/src/APIServer.cpp.o -o vellum  -lvirt -lpthread 

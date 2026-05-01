@@ -1,0 +1,3 @@
+/home/osboxes/Documents/Vellum/vellum/build/CMakeFiles/vellum.dir
+/home/osboxes/Documents/Vellum/vellum/build/CMakeFiles/edit_cache.dir
+/home/osboxes/Documents/Vellum/vellum/build/CMakeFiles/rebuild_cache.dir
