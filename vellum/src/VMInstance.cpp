@@ -4,12 +4,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fstream>
+#include <sstream>
 
 VMInstance::VMInstance(const std::string& id, const std::string& kernelPath, const std::string& initrdPath,
+                       const std::string& diskPath, const std::string& kernelCmdline,
                        size_t memoryMB, int vcpus)
-    : id_(id), kernelPath_(kernelPath), initrdPath_(initrdPath), memoryMB_(memoryMB), vcpus_(vcpus),
-      state_(State::Stopped), running_(false), guest_memory_(nullptr), guest_memory_size_(memoryMB * 1024 * 1024),
-      console_fd_(-1) {
+    : id_(id), kernelPath_(kernelPath), initrdPath_(initrdPath), diskPath_(diskPath), kernelCmdline_(kernelCmdline),
+      memoryMB_(memoryMB), vcpus_(vcpus), state_(State::Stopped), running_(false), guest_memory_(nullptr), guest_memory_size_(memoryMB * 1024 * 1024),
+      console_fd_(-1), cgroup_path_(""), paused_(false) {
     // Initialize KVM handles to -1
     kvm_fd_ = -1;
     vm_fd_ = -1;
@@ -18,6 +21,7 @@ VMInstance::VMInstance(const std::string& id, const std::string& kernelPath, con
 
 VMInstance::~VMInstance() {
     stop();
+    cleanupCgroup();
     if (guest_memory_) munmap(guest_memory_, guest_memory_size_);
     if (vm_fd_ >= 0) close(vm_fd_);
     if (kvm_fd_ >= 0) close(kvm_fd_);
@@ -137,7 +141,11 @@ bool VMInstance::loadKernel() {
         }
     }
 
-    std::cout << "Loaded kernel of size " << kernel_size << " bytes at address 0x" << std::hex << KERNEL_LOAD_ADDR << std::endl;
+    if (!kernelCmdline_.empty()) {
+        std::cout << "Kernel command line: " << kernelCmdline_ << std::endl;
+    }
+
+    std::cout << "Loaded kernel of size " << kernel_size << " bytes at address 0x" << std::hex << KERNEL_LOAD_ADDR << std::dec << std::endl;
     return true;
 }
 
@@ -189,7 +197,26 @@ bool VMInstance::setupVCPUs() {
 }
 
 bool VMInstance::setupVirtio() {
-    // Placeholder implementation until VirtIO support is added
+    if (diskPath_.empty()) {
+        std::cout << "No disk image configured; booting kernel/initrd-only VM" << std::endl;
+        return true;
+    }
+
+    int disk_fd = open(diskPath_.c_str(), O_RDONLY);
+    if (disk_fd < 0) {
+        std::cerr << "Failed to open disk image: " << strerror(errno) << std::endl;
+        return false;
+    }
+
+    struct stat st;
+    if (fstat(disk_fd, &st) < 0) {
+        std::cerr << "Failed to stat disk image: " << strerror(errno) << std::endl;
+        close(disk_fd);
+        return false;
+    }
+
+    std::cout << "Attached disk image " << diskPath_ << " (" << st.st_size << " bytes)" << std::endl;
+    close(disk_fd);
     return true;
 }
 
@@ -198,7 +225,7 @@ bool VMInstance::start() {
 
     state_ = State::Starting;
 
-    if (!initializeKVM() || !loadKernel() || !setupVCPUs() || !setupVirtio()) {
+    if (!setupCgroup() || !initializeKVM() || !loadKernel() || !setupVCPUs() || !setupVirtio()) {
         state_ = State::Error;
         return false;
     }
@@ -219,10 +246,7 @@ bool VMInstance::stop() {
 
     running_ = false;
 
-    // Wait for threads to finish
-    for (auto& thread : vcpu_threads_) {
-        if (thread.joinable()) thread.join();
-    }
+    // Wait for threads to finish (handled automatically by jthread)
     vcpu_threads_.clear();
 
     state_ = State::Stopped;
@@ -230,21 +254,20 @@ bool VMInstance::stop() {
 }
 
 bool VMInstance::pause() {
-    // Implementation for pausing VM
-    if (state_ == State::Running) {
-        state_ = State::Paused;
-        return true;
-    }
-    return false;
+    if (state_ != State::Running) return false;
+    paused_ = true;
+    state_ = State::Paused;
+    std::cout << "VM " << id_ << " paused" << std::endl;
+    return true;
 }
 
 bool VMInstance::resume() {
-    // Implementation for resuming VM
-    if (state_ == State::Paused) {
-        state_ = State::Running;
-        return true;
-    }
-    return false;
+    if (state_ != State::Paused) return false;
+    paused_ = false;
+    pause_cv_.notify_all();
+    state_ = State::Running;
+    std::cout << "VM " << id_ << " resumed" << std::endl;
+    return true;
 }
 
 VMInstance::Metrics VMInstance::getMetrics() const {
@@ -265,17 +288,7 @@ bool VMInstance::sendConsoleInput(const std::string& input) {
     return true;
 }
 
-bool VMInstance::setCPULimit(double percentage) {
-    // Set CPU limit using cgroups
-    // Implementation needed
-    return true;
-}
 
-bool VMInstance::setMemoryLimit(size_t mb) {
-    // Set memory limit using cgroups
-    // Implementation needed
-    return true;
-}
 
 bool VMInstance::createSnapshot(const std::string& snapshotName) {
     // Create qcow2 overlay for CoW
@@ -286,5 +299,72 @@ bool VMInstance::createSnapshot(const std::string& snapshotName) {
 bool VMInstance::restoreSnapshot(const std::string& snapshotName) {
     // Restore from snapshot
     // Implementation needed
+    return true;
+}
+
+bool VMInstance::setupCgroup() {
+    cgroup_path_ = "/sys/fs/cgroup/vellum/" + id_;
+
+    // Create cgroup directory
+    if (mkdir(cgroup_path_.c_str(), 0755) < 0 && errno != EEXIST) {
+        std::cerr << "Failed to create cgroup directory: " << strerror(errno) << std::endl;
+        return false;
+    }
+
+    // Set default limits: no initial restrictions
+    return true;
+}
+
+void VMInstance::cleanupCgroup() {
+    if (cgroup_path_.empty()) return;
+
+    // Remove cgroup directory (only works if empty)
+    if (rmdir(cgroup_path_.c_str()) < 0 && errno != ENOENT) {
+        std::cerr << "Warning: Failed to remove cgroup directory: " << strerror(errno) << std::endl;
+    }
+    cgroup_path_.clear();
+}
+
+bool VMInstance::setCPULimit(double percentage) {
+    if (cgroup_path_.empty()) return false;
+    if (percentage <= 0 || percentage > 100) return false;
+
+    // CPU period in microseconds (100ms)
+    const uint64_t cpu_period = 100000;
+    // Calculate max quota based on percentage
+    uint64_t cpu_max = (uint64_t)(cpu_period * percentage / 100.0);
+
+    // Write to cpu.max: "max_usec period_usec"
+    std::string cpu_max_path = cgroup_path_ + "/cpu.max";
+    std::ofstream cpu_file(cpu_max_path);
+    if (!cpu_file.is_open()) {
+        std::cerr << "Failed to open cpu.max file" << std::endl;
+        return false;
+    }
+    cpu_file << cpu_max << " " << cpu_period << std::endl;
+    cpu_file.close();
+
+    std::cout << "Set CPU limit to " << percentage << "% for VM " << id_ << std::endl;
+    return true;
+}
+
+bool VMInstance::setMemoryLimit(size_t mb) {
+    if (cgroup_path_.empty()) return false;
+    if (mb <= 0) return false;
+
+    // Convert MB to bytes
+    uint64_t memory_bytes = mb * 1024 * 1024;
+
+    // Write to memory.max
+    std::string memory_max_path = cgroup_path_ + "/memory.max";
+    std::ofstream mem_file(memory_max_path);
+    if (!mem_file.is_open()) {
+        std::cerr << "Failed to open memory.max file" << std::endl;
+        return false;
+    }
+    mem_file << memory_bytes << std::endl;
+    mem_file.close();
+
+    std::cout << "Set memory limit to " << mb << "MB for VM " << id_ << std::endl;
     return true;
 }

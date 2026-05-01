@@ -73,9 +73,9 @@ const VMConsole = ({ vmId }) => {
   }, []);
 
   return (
-    <div className="bg-white p-4 rounded shadow">
+    <div className="bg-gray-900 p-4 rounded-lg border border-gray-700 mt-4" style={{ color: '#e6e2d7' }}>
       <h2 className="text-xl font-bold mb-4">VM Console - {vmId}</h2>
-      <div ref={terminalRef} className="w-full h-96 bg-black rounded"></div>
+      <div ref={terminalRef} className="w-full h-96 bg-black rounded border border-gray-700"></div>
     </div>
   );
 };

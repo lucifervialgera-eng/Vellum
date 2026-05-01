@@ -11,13 +11,14 @@
 
 class APIServer {
 public:
-    APIServer();
+    APIServer(const std::string& frontend_build_dir);
     ~APIServer();
 
     void run();
 
 private:
     crow::SimpleApp app_;
+    std::string frontend_build_dir_;
     std::mutex connections_mutex_;
     std::unordered_map<std::string, std::unordered_set<crow::websocket::connection*>> console_connections_;
     std::unordered_set<crow::websocket::connection*> telemetry_connections_;

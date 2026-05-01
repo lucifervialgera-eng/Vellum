@@ -23,13 +23,14 @@ bool HypervisorManager::initializeKVM() {
 }
 
 std::shared_ptr<VMInstance> HypervisorManager::createVM(const std::string& id, const std::string& kernelPath,
-                                                        const std::string& initrdPath, size_t memoryMB, int vcpus) {
+                                                        const std::string& initrdPath, const std::string& diskPath,
+                                                        const std::string& kernelCmdline, size_t memoryMB, int vcpus) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (vms_.find(id) != vms_.end()) {
         return nullptr; // VM already exists
     }
 
-    auto vm = std::make_shared<VMInstance>(id, kernelPath, initrdPath, memoryMB, vcpus);
+    auto vm = std::make_shared<VMInstance>(id, kernelPath, initrdPath, diskPath, kernelCmdline, memoryMB, vcpus);
     // Set console callback if available
     // This would be set by APIServer
     vms_[id] = vm;

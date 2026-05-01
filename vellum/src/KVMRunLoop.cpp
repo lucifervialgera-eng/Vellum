@@ -3,6 +3,9 @@
 #include <iostream>
 #include <cstring>
 #include <poll.h>
+#include <fstream>
+#include <sstream>
+#include <thread>
 
 // This is a snippet showing the KVM_RUN ioctl loop in a non-blocking thread
 // In VMInstance::vcpuRunLoop(int vcpu_id)
@@ -26,6 +29,14 @@ void VMInstance::vcpuRunLoop(int vcpu_id) {
     struct pollfd pfd = {vcpu_fd, POLLIN | POLLOUT | POLLERR, 0};
 
     while (running_.load()) {
+        // Check if VM is paused
+        if (paused_.load()) {
+            std::unique_lock<std::mutex> lock(pause_mutex_);
+            while (paused_.load() && running_.load()) {
+                pause_cv_.wait(lock);
+            }
+        }
+
         // Non-blocking poll to check if KVM_RUN can proceed
         int ret = poll(&pfd, 1, 100);  // 100ms timeout for responsiveness
 

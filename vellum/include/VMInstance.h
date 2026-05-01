@@ -23,6 +23,7 @@ public:
     enum class State { Stopped, Starting, Running, Paused, Error };
 
     VMInstance(const std::string& id, const std::string& kernelPath, const std::string& initrdPath = "",
+               const std::string& diskPath = "", const std::string& kernelCmdline = "",
                size_t memoryMB = 256, int vcpus = 1);
     ~VMInstance();
 
@@ -52,6 +53,10 @@ public:
     bool setCPULimit(double percentage);
     bool setMemoryLimit(size_t mb);
 
+    // Cgroup management (internal)
+    bool setupCgroup();
+    void cleanupCgroup();
+    std::string getCgroupPath() const { return cgroup_path_; }
     // Console access
     std::string readConsoleOutput();
     bool sendConsoleInput(const std::string& input);
@@ -70,9 +75,12 @@ private:
     std::string id_;
     std::string kernelPath_;
     std::string initrdPath_;
+    std::string diskPath_;
+    std::string kernelCmdline_;
     size_t memoryMB_;
     int vcpus_;
     State state_;
+    std::string cgroup_path_;
 
     // KVM handles
     int kvm_fd_;
@@ -82,7 +90,7 @@ private:
     size_t guest_memory_size_;
 
     // Threads
-    std::vector<std::thread> vcpu_threads_;
+    std::vector<std::jthread> vcpu_threads_;
     std::atomic<bool> running_;
 
     // Console
@@ -94,6 +102,11 @@ private:
     std::mutex input_mutex_;
     std::function<void(const std::string&)> console_callback_;
     std::function<void(const VMInstance::Metrics&)> telemetry_callback_;
+
+    // Pause/resume
+    std::atomic<bool> paused_;
+    std::mutex pause_mutex_;
+    std::condition_variable pause_cv_;
 
     // Metrics
     mutable Metrics last_metrics_;

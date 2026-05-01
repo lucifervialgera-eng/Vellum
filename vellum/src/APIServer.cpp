@@ -1,8 +1,35 @@
 #include "APIServer.h"
 #include "HypervisorManager.h"
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 
-APIServer::APIServer() {
+static std::string guessMimeType(const std::string& path) {
+    if (path.ends_with(".html")) return "text/html";
+    if (path.ends_with(".css")) return "text/css";
+    if (path.ends_with(".js")) return "application/javascript";
+    if (path.ends_with(".json")) return "application/json";
+    if (path.ends_with(".ico")) return "image/x-icon";
+    if (path.ends_with(".svg")) return "image/svg+xml";
+    if (path.ends_with(".png")) return "image/png";
+    return "application/octet-stream";
+}
+
+static crow::response serveFile(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return crow::response(404);
+    }
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    crow::response res(buffer.str());
+    res.add_header("Content-Type", guessMimeType(path));
+    return res;
+}
+
+APIServer::APIServer(const std::string& frontend_build_dir)
+    : frontend_build_dir_(frontend_build_dir) {
     setupRoutes();
 }
 
@@ -18,10 +45,16 @@ void APIServer::setupRoutes() {
         std::string id = json["id"].s();
         std::string kernelPath = json["kernelPath"].s();
         std::string initrdPath = json.has("initrdPath") ? json["initrdPath"].s() : std::string();
+        std::string diskPath = json.has("diskPath") ? json["diskPath"].s() : std::string();
+        std::string kernelCmdline = json.has("kernelCmdline") ? json["kernelCmdline"].s() : std::string();
         size_t memoryMB = json.has("memoryMB") ? static_cast<size_t>(json["memoryMB"].i()) : 256;
         int vcpus = json.has("vcpus") ? (int)json["vcpus"].i() : 1;
 
-        auto vm = HypervisorManager::getInstance().createVM(id, kernelPath, initrdPath, memoryMB, vcpus);
+        if (kernelPath.empty()) {
+            return crow::response(400, "{\"success\":false,\"message\":\"Kernel path is required\"}");
+        }
+
+        auto vm = HypervisorManager::getInstance().createVM(id, kernelPath, initrdPath, diskPath, kernelCmdline, memoryMB, vcpus);
         if (vm) {
             // Set console callback for real-time streaming
             HypervisorManager::getInstance().setVMConsoleCallback(id, [this, id](const std::string& data) {
@@ -112,9 +145,13 @@ void APIServer::setupRoutes() {
         std::cout << "Console WebSocket closed" << std::endl;
     });
 
-    // Serve static files (React app)
-    CROW_ROUTE(app_, "/")([]() {
-        return crow::response(crow::mustache::load("index.html").render());
+    // Serve React frontend
+    CROW_ROUTE(app_, "/")([this]() {
+        return serveFile(frontend_build_dir_ + "/index.html");
+    });
+
+    CROW_ROUTE(app_, "/favicon.ico")([this]() {
+        return serveFile(frontend_build_dir_ + "/favicon.ico");
     });
 
     // WebSocket for telemetry

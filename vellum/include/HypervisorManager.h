@@ -13,7 +13,8 @@ public:
 
     // VM Management
     std::shared_ptr<VMInstance> createVM(const std::string& id, const std::string& kernelPath,
-                                        const std::string& initrdPath = "", size_t memoryMB = 256, int vcpus = 1);
+                                        const std::string& initrdPath = "", const std::string& diskPath = "",
+                                        const std::string& kernelCmdline = "", size_t memoryMB = 256, int vcpus = 1);
     bool destroyVM(const std::string& id);
     std::shared_ptr<VMInstance> getVM(const std::string& id) const;
     std::vector<std::string> listVMs() const;
